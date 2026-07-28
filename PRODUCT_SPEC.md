@@ -2,9 +2,9 @@
 
 ## 1. Product summary
 
-`github-actions-gate` is a deterministic Node.js ESM command-line gate that decides whether a GitHub Actions delivery satisfies four required conditions before it may be accepted.
+`github-actions-gate` is a deterministic Node.js ESM command-line gate that decides whether a GitHub Actions delivery satisfies five required conditions before it may be accepted.
 
-The product reads one JSON evaluation document, applies four explicit rules without probabilistic judgment, prints a human-readable result to the terminal, and emits a machine-readable JSON report.
+The product reads one JSON evaluation document, applies five explicit rules without probabilistic judgment, prints a human-readable result to the terminal, and emits a machine-readable JSON report.
 
 ## 2. Target users
 
@@ -20,7 +20,7 @@ The product supports exactly one workflow:
 
 1. A caller supplies an evaluation JSON document from a local file or standard input.
 2. The CLI validates the document shape.
-3. The CLI evaluates the four deterministic rules in the fixed order defined below.
+3. The CLI evaluates the five deterministic rules in the fixed order defined below.
 4. The CLI creates one JSON report containing the overall verdict and every rule result.
 5. The CLI prints a concise terminal summary unless quiet mode is enabled.
 6. The CLI optionally writes the JSON report to a file.
@@ -106,9 +106,9 @@ The MVP does not:
 
 Unknown fields are allowed and ignored. Invalid JSON or an invalid required field is an input error, not a failed gate evaluation.
 
-## 7. Four deterministic rules
+## 7. Five deterministic rules
 
-The evaluator always returns all four rule results. It must not stop after the first failure.
+The evaluator always returns all five rule results. It must not stop after the first failure.
 
 ### Rule 1: `task-associated`
 
@@ -143,9 +143,17 @@ FAIL otherwise.
 
 The evaluator does not infer report existence from passing CI. In v0.1.x the boolean is authoritative caller-provided evidence.
 
+### Rule 5: `pr-merged`
+
+PASS when `pr.state` is exactly equal to `merged`.
+
+FAIL when `pr` is absent, `null`, or `pr.state` is any value other than `merged` (including `open`, `closed`, or any other string).
+
+The evaluator does not infer merge status from CI success or commit messages. The `pr` field is authoritative caller-provided evidence; its absence is a gate failure, not an input error.
+
 ## 8. Overall verdict
 
-`verdict` is `PASS` only when all four rules pass.
+`verdict` is `PASS` only when all five rules pass.
 
 `verdict` is `FAIL` when one or more rules fail.
 
@@ -285,7 +293,7 @@ github-actions-gate --version
 
 | Code | Meaning |
 | --- | --- |
-| `0` | All four deterministic rules pass, or help/version completed. |
+| `0` | All five deterministic rules pass, or help/version completed. |
 | `1` | Valid input evaluated; one or more gate rules failed. |
 | `2` | Usage, input, schema, or filesystem error. |
 
@@ -455,7 +463,7 @@ Offline acceptance must not require a GitHub token or network connection.
 - [ ] `PRODUCT_SPEC.md` exists and is non-empty.
 - [ ] The specification defines one target user, one workflow, and explicit non-goals.
 - [ ] The specification defines canonical JSON input and output.
-- [ ] Exactly four deterministic rules are defined.
+- [ ] Exactly five deterministic rules are defined.
 - [ ] A complete failure report example is included.
 - [ ] CLI commands, options, streams, and exit codes are defined.
 
@@ -480,7 +488,7 @@ Offline acceptance must not require a GitHub token or network connection.
 - [ ] `ci-passes` fails on empty, pending, skipped, cancelled, neutral, or failed checks.
 - [ ] `test-report-exists` passes only when `exists` is `true` and `path` is non-empty.
 - [ ] `test-report-exists` fails when evidence is absent or false.
-- [ ] Overall verdict passes only when all four rules pass.
+- [ ] Overall verdict passes only when all five rules pass.
 
 ### CLI tests
 
