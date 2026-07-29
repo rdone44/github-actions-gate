@@ -35,3 +35,8 @@ jobs:
 
       - run: docker run --rm -v "$PWD/fixtures:/app/fixtures" github-actions-gate:ci evaluate --input fixtures/pass.json --json
         name: Docker PASS fixture (JSON)
+
+      - uses: ./. 
+        name: Gate Check — action.yml with fixture-path
+        with:
+          fixture-path: fixtures/pass.json
