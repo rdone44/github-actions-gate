@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "task": {
+    "id": "TASK-456",
+    "title": "   \t   "
+  },
+  "change": {
+    "commitSha": "abcdef0123456789012345678901234567abcdef01",
+    "associatedTaskIds": [
+      "TASK-456"
+    ]
+  },
+  "ci": {
+    "checks": [
+      {
+        "name": "test",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "testReport": {
+    "format": "json",
+    "path": "artifacts/test-report.json",
+    "exists": true
+  },
+  "metadata": {
+    "repository": "owner/repository",
+    "pullRequest": 99
+  }
+}
