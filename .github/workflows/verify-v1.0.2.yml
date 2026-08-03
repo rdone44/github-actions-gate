@@ -1,0 +1,35 @@
+name: verify-v1.0.2
+
+# ─────────────────────────────────────────────────────────────────────
+# Acceptance verification: exercise rdone44/github-actions-gate@v1.0.2
+# (the published Latest release) on a real PR with a PASS fixture.
+# This workflow is the proof that `uses: rdone44/github-actions-gate@v1.0.2`
+# resolves and runs the Docker action from the tag, not from `./.`
+# ─────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-v1.0.2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-published-action:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout is needed so the fixture file (fixtures/pass.json) is present
+      # on the runner for the Docker action to mount/consume.
+      - uses: actions/checkout@v4
+
+      # ── The verification itself: invoke the PUBLISHED action tag. ──
+      # If @v1.0.2 resolves and the Docker image evaluates pass.json to
+      # verdict=PASS, this step exits 0 → job is green.
+      # On failure, the step fails the job — do not silence it.
+      - name: Run rdone44/github-actions-gate@v1.0.2 against PASS fixture
+        uses: rdone44/github-actions-gate@v1.0.2
+        with:
+          fixture-path: fixtures/pass.json
