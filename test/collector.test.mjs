@@ -31,7 +31,7 @@ const VALID_SHA = "0123456789abcdef0123456789abcdef01234567";
 
 // ---------- §16.3 — buildEvaluationDocument with injected stubs ----------
 
-function makeApi({ commitBody = {}, checkRuns = [], artifacts = [], prBody = null, prStatus = 200, token = "tok" } = {}) {
+function makeApi({ commitBody = {}, checkRuns = [], artifacts = [], prBody = null, prStatus = 200, commitsPulls = null, token = "tok" } = {}) {
   const calls = [];
   const fetchPage = async (path) => {
     calls.push({ fetchPage: path });
@@ -46,6 +46,10 @@ function makeApi({ commitBody = {}, checkRuns = [], artifacts = [], prBody = nul
         headers: new Map([["link", ""]]),
         body: { check_runs: checkRuns, total: checkRuns.length },
       };
+    }
+    if (path === `/repos/owner/repo/commits/${VALID_SHA}/pulls`) {
+      if (commitsPulls === null) return { status: 404, headers: new Map(), body: null };
+      return { status: 200, headers: new Map(), body: commitsPulls };
     }
     if (path === `/repos/owner/repo/actions/artifacts`) {
       if (artifacts === null) return { status: 404, headers: new Map(), body: null };
@@ -352,4 +356,70 @@ test("CLI integration: collect \u2192 verdict FAIL (exit 1)", () => {
   let result;
   expect(() => { result = JSON.parse(stdout); }).not.toThrow();
   expect(result.verdict).toBe("FAIL", `expected FAIL verdict, got ${result.verdict}`);
+});
+
+// ---------- v1.0.4 — commits/{sha}/pulls auto-backfill ----------
+
+test("§16 collect: auto-backfill pr via commits/{sha}/pulls returns [{number:42}] → doc.pr.state='merged'", async () => {
+  const api = makeApi({
+    commitBody: { sha: VALID_SHA },
+    checkRuns: [{ name: "test", status: "completed", conclusion: "success" }],
+    commitsPulls: [{ number: 42 }],
+    prBody: { state: "closed", merged_at: "2026-01-01T00:00:00Z" },
+  });
+  // prNumber NOT passed — auto-backfill should trigger
+  const doc = await buildEvaluationDocument("owner", "repo", VALID_SHA, {
+    taskId: "TASK-1",
+    report: "test-report",
+    artifacts: [{ name: "test-report", expired: false, archive_download_url: "https://x/y/test-report.zip" }],
+  }, api);
+
+  expect(doc.pr).toBeDefined();
+  expect(doc.pr.state).toBe("merged");
+  // Verify commits/{sha}/pulls was called
+  const callsPath = api.calls.map((c) => c.fetchPage).filter(Boolean);
+  expect(callsPath.some((p) => p === `/repos/owner/repo/commits/${VALID_SHA}/pulls`)).toBe(true);
+  // Verify the backfilled PR number 42 fetched pulls/42
+  expect(callsPath.some((p) => p === "/repos/owner/repo/pulls/42")).toBe(true);
+});
+
+test("§16 collect: commits/{sha}/pulls returns [] empty → prState null, no pr field in doc", async () => {
+  const api = makeApi({
+    commitBody: { sha: VALID_SHA },
+    checkRuns: [{ name: "test", status: "completed", conclusion: "success" }],
+    commitsPulls: [],
+  });
+  // prNumber NOT passed — auto-backfill returns empty array
+  const doc = await buildEvaluationDocument("owner", "repo", VALID_SHA, {
+    taskId: "TASK-1",
+  }, api);
+
+  expect(doc.pr).toBeUndefined();
+  // Verify commits/{sha}/pulls was called
+  const callsPath = api.calls.map((c) => c.fetchPage).filter(Boolean);
+  expect(callsPath.some((p) => p === `/repos/owner/repo/commits/${VALID_SHA}/pulls`)).toBe(true);
+  // Verify no pulls/{number} call happened
+  expect(callsPath.some((p) => p.startsWith("/repos/owner/repo/pulls/"))).toBe(false);
+});
+
+test("§16 collect: explicit prNumber does NOT call commits/{sha}/pulls", async () => {
+  const api = makeApi({
+    commitBody: { sha: VALID_SHA },
+    checkRuns: [{ name: "test", status: "completed", conclusion: "success" }],
+    commitsPulls: [{ number: 99 }], // would be wrong to use this
+    prBody: { state: "closed", merged_at: "2026-01-01T00:00:00Z" },
+  });
+  // prNumber explicitly passed — should use it directly, NOT auto-backfill
+  const doc = await buildEvaluationDocument("owner", "repo", VALID_SHA, {
+    taskId: "TASK-1",
+    prNumber: 42,
+  }, api);
+
+  expect(doc.pr).toBeDefined();
+  expect(doc.pr.state).toBe("merged");
+  const callsPath = api.calls.map((c) => c.fetchPage).filter(Boolean);
+  // commits/{sha}/pulls must NOT be called when prNumber is explicit
+  expect(callsPath.some((p) => p === `/repos/owner/repo/commits/${VALID_SHA}/pulls`)).toBe(false);
+  // pulls/42 should be called (the explicit number)
+  expect(callsPath.some((p) => p === "/repos/owner/repo/pulls/42")).toBe(true);
 });

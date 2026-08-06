@@ -258,19 +258,42 @@ export async function buildEvaluationDocument(
     }
   }
 
-  // 4. Fetch PR state if --pr is provided: GET /repos/{owner}/{repo}/pulls/{pr_number}
+  // 4. Fetch PR state.
+  //    If --pr is provided, use that number directly.
+  //    If --pr is NOT provided, auto-backfill: call
+  //      GET /repos/{owner}/{repo}/commits/{sha}/pulls
+  //    to discover PRs associated with this commit, take the first non-empty
+  //    result's .number, then fetch PR state via the existing pulls/{number}
+  //    endpoint. If the commits/{sha}/pulls endpoint returns an empty array,
+  //    prState stays null (no error — evaluator FAILs pr-merged by design).
   let prState = null;
-  if (prNumber) {
-    const prPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}`;
+  let effectivePrNumber = prNumber;
+
+  if (!effectivePrNumber) {
+    // Auto-backfill: query commits/{sha}/pulls for associated PRs.
+    const pullsForCommitPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}/pulls`;
+    const pullsForCommitRes = await fp(pullsForCommitPath, token);
+    if (pullsForCommitRes.status === 404) {
+      // No associated PRs endpoint — leave prState null.
+    } else if (pullsForCommitRes.status >= 400) {
+      throw classifyHttpError(pullsForCommitRes.status, pullsForCommitRes.headers, pullsForCommitPath);
+    } else if (Array.isArray(pullsForCommitRes.body) && pullsForCommitRes.body.length > 0) {
+      effectivePrNumber = pullsForCommitRes.body[0].number;
+    }
+    // Empty array or null body → effectivePrNumber stays null → prState stays null.
+  }
+
+  if (effectivePrNumber) {
+    const prPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${effectivePrNumber}`;
     const prRes = await fp(prPath, token);
     if (prRes.status === 404) {
-      throw new CollectorError(`PR #${prNumber} not found in ${owner}/${repo}`, {
+      throw new CollectorError(`PR #${effectivePrNumber} not found in ${owner}/${repo}`, {
         kind: "AMBIGUOUS_EVIDENCE",
         status: 404,
       });
     }
     if (prRes.status >= 400) {
-      throw classifyHttpError(prRes.status, prRes.headers, `PR #${prNumber}`);
+      throw classifyHttpError(prRes.status, prRes.headers, `PR #${effectivePrNumber}`);
     }
     if (prRes.body && typeof prRes.body === "object") {
       // GitHub "pulls" API uses "state" = open|closed; "merged" is a boolean.

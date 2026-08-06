@@ -51,47 +51,6 @@ jobs:
 
       - run: npm install        # gate.mjs imports src/ — no dev-deps needed at runtime, but keep parity
 
-      # ── Resolve the PR number for the merged commit ───────────────
-      # push-to-main after a merge lacks github.event.pull_request, so we
-      # look up the PR that generated this merge commit via the REST API.
-      # Two strategies tried (curl first — no dependency on `gh` JSON field
-      # naming). When neither resolves, gate runs WITHOUT --pr so the
-      # pr-merged rule FAILs by design (correct: no PR evidence → no deploy).
-      - name: Resolve merged PR number
-        id: pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          SHA="${{ github.sha }}"
-          REPO="${{ github.repository }}"
-
-          # Strategy A: query pulls API for recently merged PRs, match merge_commit_sha.
-          PR_NUMBER=""
-          API="/repos/$REPO/pulls?state=closed&sort=updated&direction=desc&per_page=50"
-          PR_NUMBER=$(curl -fsSL -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com$API" \
-            | jq -r --arg sha "$SHA" '.[] | select(.merged_at != null and .merge_commit_sha == $sha) | .number' \
-            | head -n1 || true)
-
-          echo "PR_NUMBER from strategy A: '${PR_NUMBER:-}'"
-
-          # Strategy B: gh CLI as fallback if strategy A returned nothing.
-          if [ -z "$PR_NUMBER" ]; then
-            PR_NUMBER=$(gh pr list --repo "$REPO" --state merged --limit 30 \
-              --json number,mergeCommitSha --jq ".[] | select(.mergeCommitSha == \"$SHA\") | .number" \
-              | head -n1 || true)
-            echo "PR_NUMBER from strategy B: '${PR_NUMBER:-}'"
-          fi
-
-          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
-            echo "::warning::No merged PR found for commit $SHA; running gate WITHOUT --pr (pr-merged rule FAILs by design — direct push to main)"
-            echo "number=" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::Resolved merged PR #$PR_NUMBER for commit $SHA"
-            echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          fi
-
       # ── Run the gate: collect evidence from GitHub REST API + evaluate ─
       # NO continue-on-error. A PASS is required for the job (and thus the
       # deploy job) to proceed. This is what makes gate a *blocker*.
@@ -101,11 +60,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          PR_ARGS=""
-          PR_NUM="${{ steps.pr.outputs.number }}"
-          if [ -n "$PR_NUM" ] && [ "$PR_NUM" != "" ]; then
-            PR_ARGS="--pr $PR_NUM --task $PR_NUM"
-          fi
 
           node bin/gate.mjs collect \
             --owner "${{ github.repository_owner }}" \
@@ -113,7 +67,6 @@ jobs:
             --sha "${{ github.sha }}" \
             --report "test-report" \
             --branch "${{ github.ref_name }}" \
-            $PR_ARGS \
             --json \
             --output gate-result.json
 
